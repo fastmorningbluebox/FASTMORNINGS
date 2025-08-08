@@ -25,15 +25,6 @@ export default async function handler(req, res) {
     return res.status(405).send('Method not allowed');
   }
 
-  // Optional token lock using Vercel env var
-  const requiredToken = process.env.TEAM_ACCESS_TOKEN;
-  if (requiredToken) {
-    const providedToken = req.headers['x-access-token'];
-    if (!providedToken || providedToken !== requiredToken) {
-      return res.status(401).send('Unauthorized');
-    }
-  }
-
   try {
     const { text, direction, tone } = req.body || {};
     if (!text || typeof text !== 'string') {

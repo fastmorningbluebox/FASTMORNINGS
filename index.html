@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ryo Translator</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 0; background: #0b0b0f; color: #fff; }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 24px; }
+    .card { background: #14151a; border: 1px solid #262833; border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,.25); }
+    .row { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 900px) { .row { grid-template-columns: 1fr 1fr; } }
+    textarea { width: 100%; min-height: 160px; background: #0f1015; color: #fff; border: 1px solid #2a2d3a; border-radius: 12px; padding: 12px; resize: vertical; }
+    select, input[type="text"], button { background: #0f1015; color: #fff; border: 1px solid #2a2d3a; border-radius: 10px; padding: 10px 12px; }
+    button { cursor: pointer; }
+    .btn { background: #3d5afe; border: none; }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .muted { color: #bfc3d9; opacity: .85; font-size: 12px; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip { padding: 6px 10px; border-radius: 999px; border: 1px solid #2a2d3a; cursor: pointer; }
+    .chip.active { background: #2a2d3a; }
+    .stack { display: grid; gap: 10px; }
+    .split { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+    .pill { border-radius: 999px; padding: 4px 8px; border: 1px solid #2a2d3a; }
+    .history { display: grid; gap: 8px; max-height: 220px; overflow: auto; }
+    .item { padding: 8px; background: #0f1015; border: 1px solid #2a2d3a; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Ryo Translator 💖</h1>
+    <p class="muted">EN ⇆ JA ⇆ ZH‑TW • Tone presets • Keeps emojis • One‑click copy</p>
+
+    <div class="card stack">
+      <div class="split">
+        <div class="stack">
+          <label for="source">Source Text</label>
+          <textarea id="source" placeholder="Paste text here…"></textarea>
+        </div>
+        <div class="stack">
+          <label for="result">Result</label>
+          <textarea id="result" placeholder="Translation appears here…"></textarea>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="chips" id="toneChips"></div>
+        <select id="direction">
+          <option value="EN>JA">English ➜ Japanese</option>
+          <option value="EN>ZH-TW">English ➜ Chinese (Traditional)</option>
+          <option value="JA>EN">Japanese ➜ English</option>
+          <option value="ZH-TW>EN">Chinese (Traditional) ➜ English</option>
+          <option value="JA>ZH-TW">Japanese ➜ Chinese (Traditional)</option>
+          <option value="ZH-TW>JA">Chinese (Traditional) ➜ Japanese</option>
+        </select>
+        <input id="token" type="text" placeholder="Access token (if set)" />
+        <button id="translateBtn" class="btn">Translate ⚡</button>
+        <button id="copyBtn">Copy</button>
+        <button id="swapBtn">Swap ⟷</button>
+        <span id="status" class="muted"></span>
+      </div>
+    </div>
+
+    <h3>History</h3>
+    <div id="history" class="history"></div>
+  </div>
+
+  <script>
+    const tones = ["Cute", "Flirty", "Sassy", "Polite"];
+    const toneChips = document.getElementById('toneChips');
+    let selectedTone = 'Cute';
+
+    tones.forEach(t => {
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (t===selectedTone ? ' active' : '');
+      chip.textContent = t;
+      chip.onclick = () => {
+        selectedTone = t;
+        [...toneChips.children].forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+      };
+      toneChips.appendChild(chip);
+    });
+
+    const source = document.getElementById('source');
+    const result = document.getElementById('result');
+    const direction = document.getElementById('direction');
+    const translateBtn = document.getElementById('translateBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const swapBtn = document.getElementById('swapBtn');
+    const statusEl = document.getElementById('status');
+    const tokenEl = document.getElementById('token');
+    const historyEl = document.getElementById('history');
+
+    const saveHistory = (src, out, dir, tone) => {
+      const item = document.createElement('div');
+      item.className = 'item';
+      item.innerHTML = `<div class="muted">${dir} • ${tone}</div><div style="white-space: pre-wrap; margin-top:6px">${out.replace(/</g,'&lt;')}</div>`;
+      historyEl.prepend(item);
+      if (historyEl.children.length > 50) historyEl.lastChild.remove();
+    };
+
+    copyBtn.onclick = async () => {
+      await navigator.clipboard.writeText(result.value);
+      statusEl.textContent = 'Copied!';
+      setTimeout(() => statusEl.textContent = '', 1000);
+    };
+
+    swapBtn.onclick = () => {
+      const [from, to] = direction.value.split('>');
+      const newDir = `${to}>${from}`;
+      direction.value = newDir;
+      const temp = source.value; source.value = result.value; result.value = temp;
+    };
+
+    translateBtn.onclick = async () => {
+      const text = source.value.trim();
+      if (!text) { statusEl.textContent = 'Paste some text first'; return; }
+      translateBtn.disabled = true; statusEl.textContent = 'Translating…';
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(tokenEl.value ? { 'X-Access-Token': tokenEl.value } : {}) },
+          body: JSON.stringify({ text, direction: direction.value, tone: selectedTone })
+        });
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || ('HTTP '+res.status));
+        }
+        const data = await res.json();
+        result.value = data.translation;
+        saveHistory(text, data.translation, direction.value, selectedTone);
+        statusEl.textContent = 'Done';
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + e.message;
+      } finally {
+        translateBtn.disabled = false;
+        setTimeout(() => statusEl.textContent = '', 1200);
+      }
+    };
+  </script>
+</body>
+</html>
